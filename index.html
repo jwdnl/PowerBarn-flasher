@@ -63,6 +63,11 @@
         <button id="wifiBtn">WiFi naar device sturen</button>
         <button id="checkBtn" class="secondary">Check huidige WiFi</button>
       </div>
+      <div style="margin-top:.4rem">
+        <span style="color:#8a8f98;font-size:.85rem">Actieve link wisselen (reboot, geen reflash):</span><br/>
+        <button id="modeWifi" class="secondary">WiFi-modus</button>
+        <button id="modeBle" class="secondary">BLE-modus</button>
+      </div>
       <pre id="wifiLog"></pre>
     </section>
 
@@ -146,6 +151,16 @@
     document.getElementById('checkBtn').addEventListener('click', async () => {
       log('Huidige WiFi opvragen...');
       await serialSend(['get wifi'], 1200, null);
+    });
+
+    // --- Actieve link wisselen (toggle, geen reflash) ------------------------
+    document.getElementById('modeWifi').addEventListener('click', async () => {
+      log('Naar WiFi-modus (device reboot)...');
+      await serialSend(['wifi on'], 1200, null);
+    });
+    document.getElementById('modeBle').addEventListener('click', async () => {
+      log('Naar BLE-modus (device reboot)...');
+      await serialSend(['wifi off'], 1200, null);
     });
   </script>
 </body>
