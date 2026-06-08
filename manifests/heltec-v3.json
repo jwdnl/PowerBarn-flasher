@@ -1,0 +1,13 @@
+{
+  "name": "PowerBarn Heltec V3",
+  "version": "0.16b",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "../firmware/powerbarn-heltec-v3-v0.16b.bin", "offset": 0 }
+      ]
+    }
+  ]
+}
