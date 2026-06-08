@@ -15,17 +15,21 @@
     h1 .barn { color:#f5a623; }
     .ver { color:#8a8f98; margin:.25rem 0 1.75rem; font-size:.95rem; }
     label { display:inline-block; margin:.25rem 0; color:#c8ccd2; }
-    select, input { background:#16181d; color:#e8e8ea; border:1px solid #2a2d35;
-                    border-radius:8px; padding:.5rem .6rem; font-size:.95rem; }
-    input { width:min(320px, 80vw); margin:.3rem 0; }
+    select, input[type=text], input[type=password] { background:#16181d; color:#e8e8ea;
+            border:1px solid #2a2d35; border-radius:8px; padding:.5rem .6rem; font-size:.95rem; }
+    input[type=text], input[type=password] { width:min(320px, 80vw); margin:.3rem 0; }
     button { background:#f5a623; color:#1a1300; border:0; border-radius:8px;
-             padding:.55rem 1rem; font-weight:600; cursor:pointer; font-size:.95rem; }
+             padding:.55rem 1rem; font-weight:600; cursor:pointer; font-size:.95rem; margin:.2rem; }
+    button.secondary { background:#2a2d35; color:#e8e8ea; }
     button:hover { filter:brightness(1.08); }
     esp-web-install-button { display:inline-block; margin:.75rem 0; }
+    .erase { display:flex; gap:.5rem; align-items:center; justify-content:center;
+             color:#c8ccd2; font-size:.9rem; margin:.5rem 0; }
     section { margin-top:1.75rem; padding-top:1.25rem; border-top:1px solid #20232b; }
     h3 { margin:.25rem 0 .75rem; font-weight:600; }
     pre { text-align:left; white-space:pre-wrap; word-break:break-word; color:#8a8f98;
-          font-size:.8rem; max-height:180px; overflow:auto; }
+          font-size:.8rem; max-height:200px; overflow:auto; background:#121419; border-radius:8px;
+          padding:.6rem; }
     .note { color:#8a8f98; font-size:.85rem; margin-top:1.75rem; line-height:1.55; }
     a { color:#6ea8fe; }
   </style>
@@ -38,7 +42,7 @@
     <div>
       <label for="board">Board:</label>
       <select id="board">
-        <option value="manifests/heltec-v3.json">Heltec V3 (ESP32-S3)</option>
+        <option value="heltec-v3">Heltec V3 (ESP32-S3)</option>
       </select>
     </div>
 
@@ -46,34 +50,50 @@
       <esp-web-install-button id="btn" manifest="manifests/heltec-v3.json"></esp-web-install-button>
     </div>
 
+    <label class="erase">
+      <input type="checkbox" id="erase" />
+      Volledig wissen (formatteren) &mdash; wist ook je WiFi &amp; identiteit
+    </label>
+
     <section id="wifi">
       <h3>WiFi instellen</h3>
-      <div><input id="ssid" placeholder="SSID" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>
-      <div><input id="pwd" type="password" placeholder="Wachtwoord" autocomplete="off" /></div>
-      <div><button id="wifiBtn">WiFi naar device sturen</button></div>
+      <div><input type="text" id="ssid" placeholder="SSID" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>
+      <div><input type="password" id="pwd" placeholder="Wachtwoord" autocomplete="off" /></div>
+      <div>
+        <button id="wifiBtn">WiFi naar device sturen</button>
+        <button id="checkBtn" class="secondary">Check huidige WiFi</button>
+      </div>
       <pre id="wifiLog"></pre>
     </section>
 
     <p class="note">
       Werkt in <strong>Chrome</strong> of <strong>Edge</strong> (WebSerial). Sluit de Heltec via USB
       aan; houd zo nodig de <strong>BOOT</strong>-knop ingedrukt bij het verbinden.<br />
+      Standaard blijven je <strong>instellingen behouden</strong> (WiFi &amp; identiteit). Vink
+      &ldquo;Volledig wissen&rdquo; aan voor een schone installatie.<br />
       De nRF52 <em>Seeed Solar Node</em> flash je los via UF2 (drag-drop) &mdash; niet via deze tool.
     </p>
   </main>
 
   <script>
-    // Board-dropdown wisselt het manifest van de install-knop.
-    const sel = document.getElementById('board');
+    // --- manifest kiezen op basis van board + format-toggle ------------------
+    const board = document.getElementById('board');
+    const erase = document.getElementById('erase');
     const btn = document.getElementById('btn');
-    sel.addEventListener('change', () => btn.setAttribute('manifest', sel.value));
+    function updateManifest() {
+      const suffix = erase.checked ? '-erase' : '';
+      btn.setAttribute('manifest', `manifests/${board.value}${suffix}.json`);
+    }
+    board.addEventListener('change', updateManifest);
+    erase.addEventListener('change', updateManifest);
 
-    // WiFi-provisioning: stuur onze eigen `set wifi.*`-commando's over WebSerial.
+    // --- gedeelde WebSerial helper ------------------------------------------
     const log = (m) => { document.getElementById('wifiLog').textContent += m + "\n"; };
-    document.getElementById('wifiBtn').addEventListener('click', async () => {
-      const ssid = document.getElementById('ssid').value;
-      const pwd  = document.getElementById('pwd').value;
+
+    // Stuur regels naar het device en lees ~`readMs` ms de echo mee.
+    // `mask` maskeert wachtwoorden in de log.
+    async function serialSend(lines, readMs, mask) {
       if (!('serial' in navigator)) { log('WebSerial niet ondersteund (gebruik Chrome/Edge).'); return; }
-      if (!ssid) { log('Vul een SSID in.'); return; }
       let port;
       try {
         port = await navigator.serial.requestPort();
@@ -82,7 +102,6 @@
         const dec = new TextDecoder();
         const writer = port.writable.getWriter();
         const reader = port.readable.getReader();
-        // Lees ~1.5s echo mee voor bevestiging.
         const readFor = (ms) => new Promise((res) => {
           const t = setTimeout(res, ms);
           (async () => {
@@ -90,25 +109,43 @@
               while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
-                if (value) log(dec.decode(value).trim());
+                if (value) log(dec.decode(value).trimEnd());
               }
             } catch (_) {}
             clearTimeout(t); res();
           })();
         });
-        for (const cmd of [`set wifi.ssid ${ssid}`, `set wifi.pwd ${pwd}`, 'reboot']) {
+        for (const cmd of lines) {
           await writer.write(enc.encode(cmd + "\n"));
-          log('> ' + (cmd.startsWith('set wifi.pwd') ? 'set wifi.pwd ******' : cmd));
+          log('> ' + (mask && mask(cmd) || cmd));
         }
-        await readFor(1500);
+        await readFor(readMs);
         try { reader.releaseLock(); } catch (_) {}
         try { writer.releaseLock(); } catch (_) {}
         await port.close();
-        log('Klaar — device herstart met de nieuwe WiFi-instellingen.');
       } catch (e) {
         log('Fout: ' + e.message);
         try { await port?.close(); } catch (_) {}
       }
+    }
+
+    // --- WiFi instellen ------------------------------------------------------
+    document.getElementById('wifiBtn').addEventListener('click', async () => {
+      const ssid = document.getElementById('ssid').value;
+      const pwd  = document.getElementById('pwd').value;
+      if (!ssid) { log('Vul een SSID in.'); return; }
+      await serialSend(
+        [`set wifi.ssid ${ssid}`, `set wifi.pwd ${pwd}`, 'reboot'],
+        1500,
+        (c) => c.startsWith('set wifi.pwd') ? 'set wifi.pwd ******' : null
+      );
+      log('Klaar — device herstart met de nieuwe WiFi-instellingen.');
+    });
+
+    // --- Check huidige WiFi --------------------------------------------------
+    document.getElementById('checkBtn').addEventListener('click', async () => {
+      log('Huidige WiFi opvragen...');
+      await serialSend(['get wifi'], 1200, null);
     });
   </script>
 </body>

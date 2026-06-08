@@ -1,7 +1,7 @@
 {
-  "name": "PowerBarn Heltec V3",
+  "name": "PowerBarn Heltec V3 (volledig wissen)",
   "version": "0.16b",
-  "new_install_prompt_erase": false,
+  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
